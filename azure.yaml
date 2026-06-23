@@ -1,0 +1,8 @@
+name: ora
+metadata:
+  template: ora@0.1.0
+services:
+  api:
+    project: .
+    language: py
+    host: containerapp
