@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import httpx
 from azure.identity import DefaultAzureCredential
 
+DEFAULT_CREDENTIAL = DefaultAzureCredential()
+
 
 @dataclass(slots=True)
 class ModelConfig:
@@ -43,11 +45,10 @@ def _auth_headers(cfg: ModelConfig) -> dict[str, str]:
     
     if cfg.auth_mode == 'entra-id' or (not cfg.api_key and cfg.auth_mode == 'bearer'):
         try:
-            credential = DefaultAzureCredential()
-            token = credential.get_token('https://cognitiveservices.azure.com/.default')
+            token = DEFAULT_CREDENTIAL.get_token('https://cognitiveservices.azure.com/.default')
             return {'Authorization': f'Bearer {token.token}'}
         except Exception as e:
-            raise ValueError(f'Failed to acquire Entra ID token: {e}')
+            raise ValueError(f'Failed to acquire Entra ID token: {e}') from e
     
     return {'Authorization': f'Bearer {cfg.api_key}'}
 

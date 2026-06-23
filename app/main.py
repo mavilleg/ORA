@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI, HTTPException
 
 from app.cosmos_client import cosmos_client
-from app.models import ArenaRun
 from app.orchestrator import ArenaOrchestrator
 from app.schemas import ArenaRunRequest, ArenaRunResponse, RunDetailResponse
 from app.settings import settings
@@ -35,8 +35,14 @@ async def health() -> dict[str, str | list[str]]:
 async def run_arena(req: ArenaRunRequest) -> ArenaRunResponse:
     try:
         return await orchestrator.run(req)
-    except Exception as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail='Model request timed out') from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f'Upstream model error: {exc.response.status_code}') from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail='Internal server error') from exc
 
 
 @app.get('/arena/runs/{run_id}', response_model=RunDetailResponse)
