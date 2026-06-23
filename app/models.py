@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RunStatus(str, Enum):
@@ -14,8 +14,8 @@ class RunStatus(str, Enum):
 
 class ArenaRun(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: RunStatus = RunStatus.PENDING
     prompt: str
     system_prompt: str = 'You are a helpful reasoning assistant.'
@@ -23,11 +23,10 @@ class ArenaRun(BaseModel):
     temperature: float = 0.2
     max_tokens: int = 800
     winner_alias: str | None = None
-    answers: dict = Field(default_factory=dict)  # {alias: answer_text}
-    scores: dict = Field(default_factory=dict)  # {alias: score}
+    answers: dict[str, str] = Field(default_factory=dict)
+    scores: dict[str, float] = Field(default_factory=dict)
     judge: str | None = None
-    latencies: dict = Field(default_factory=dict)  # {alias: latency_ms}
+    latencies: dict[str, int] = Field(default_factory=dict)
     error: str | None = None
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)

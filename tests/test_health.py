@@ -10,3 +10,6 @@ def test_health() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload['status'] == 'ok'
+    assert 'configured_models' in payload
+    assert 'judge_model' in payload
+    assert payload['persistence'] in {'none', 'cosmos'}

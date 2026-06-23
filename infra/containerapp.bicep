@@ -48,6 +48,9 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2023-04-01-preview' 
 resource containerApp 'Microsoft.App/containerApps@2023-04-01-preview' = {
   name: 'ora-api'
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     managedEnvironmentId: containerAppEnv.id
     configuration: {
@@ -62,12 +65,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-04-01-preview' = {
           }
         ]
       }
-      secrets: [
-        {
-          name: 'cosmos-key'
-          value: listKeys(cosmosDb.id, '2023-04-15').primaryMasterKey
-        }
-      ]
     }
     template: {
       containers: [
@@ -86,10 +83,6 @@ resource containerApp 'Microsoft.App/containerApps@2023-04-01-preview' = {
             {
               name: 'COSMOS_ENDPOINT'
               value: reference(cosmosDb.id, '2023-04-15').documentEndpoint
-            }
-            {
-              name: 'COSMOS_KEY'
-              secretRef: 'cosmos-key'
             }
             {
               name: 'COSMOS_DB'

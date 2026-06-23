@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 
 from app.cosmos_client import cosmos_client
@@ -42,6 +43,7 @@ class ArenaOrchestrator:
             
             # Update run with results
             arena_run.status = RunStatus.COMPLETED
+            arena_run.updated_at = datetime.now(timezone.utc)
             arena_run.winner_alias = winner.model_alias
             arena_run.judge = judge
             arena_run.answers = {a.model_alias: a.answer for a in scored_answers}
@@ -57,6 +59,7 @@ class ArenaOrchestrator:
             )
         except Exception as exc:
             arena_run.status = RunStatus.FAILED
+            arena_run.updated_at = datetime.now(timezone.utc)
             arena_run.error = str(exc)
             await cosmos_client.save_run(arena_run)
             raise
@@ -110,14 +113,27 @@ class ArenaOrchestrator:
             timeout_seconds=settings.model_timeout_seconds,
         )
 
-        try:
-            payload = json.loads(raw)
-            scores = payload.get('scores', {}) if isinstance(payload, dict) else {}
-        except Exception:
-            scores = {}
+        scores = self._parse_judge_scores(raw)
 
         for ans in answers:
             score = scores.get(ans.model_alias)
             ans.score = float(score) if isinstance(score, (int, float)) else 0.1
 
         return answers
+
+    def _parse_judge_scores(self, raw: str) -> dict[str, float]:
+        candidates = [raw]
+        if '```' in raw:
+            fenced = raw.split('```')
+            candidates.extend(part.strip() for i, part in enumerate(fenced) if i % 2 == 1)
+
+        for candidate in candidates:
+            normalized = candidate.removeprefix('json').strip()
+            try:
+                payload = json.loads(normalized)
+            except Exception:
+                continue
+
+            if isinstance(payload, dict) and isinstance(payload.get('scores'), dict):
+                return payload['scores']
+        return {}
