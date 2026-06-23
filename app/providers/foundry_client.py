@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 
 import httpx
+from azure.identity import DefaultAzureCredential
 
 
 @dataclass(slots=True)
@@ -36,8 +37,18 @@ def load_model_config(alias: str) -> ModelConfig:
 
 
 def _auth_headers(cfg: ModelConfig) -> dict[str, str]:
+    """Build auth headers; supports API key or Entra ID token."""
     if cfg.auth_mode == 'api-key':
         return {'api-key': cfg.api_key}
+    
+    if cfg.auth_mode == 'entra-id' or (not cfg.api_key and cfg.auth_mode == 'bearer'):
+        try:
+            credential = DefaultAzureCredential()
+            token = credential.get_token('https://cognitiveservices.azure.com/.default')
+            return {'Authorization': f'Bearer {token.token}'}
+        except Exception as e:
+            raise ValueError(f'Failed to acquire Entra ID token: {e}')
+    
     return {'Authorization': f'Bearer {cfg.api_key}'}
 
 
@@ -50,7 +61,7 @@ async def chat_completion(
     max_tokens: int,
     timeout_seconds: int,
 ) -> tuple[str, int]:
-    if not cfg.base_url or not cfg.api_key:
+    if not cfg.base_url:
         raise ValueError(f'Model config incomplete for alias: {cfg.alias}')
 
     url = f'{cfg.base_url}{cfg.api_path}'

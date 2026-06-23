@@ -18,6 +18,19 @@ class ModelAnswer(BaseModel):
 
 
 class ArenaRunResponse(BaseModel):
+    run_id: str
     winner: ModelAnswer
     answers: list[ModelAnswer]
     judge: str
+
+
+class RunDetailResponse(BaseModel):
+    id: str
+    status: str
+    prompt: str
+    winner_alias: str | None = None
+    answers: dict
+    scores: dict
+    latencies: dict
+    judge: str | None = None
+    error: str | None = None

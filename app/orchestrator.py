@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+from app.cosmos_client import cosmos_client
+from app.models import ArenaRun, RunStatus
 from app.providers.foundry_client import chat_completion, load_model_config
 from app.schemas import ArenaRunRequest, ArenaRunResponse, ModelAnswer
 from app.settings import settings
@@ -14,22 +16,50 @@ class ArenaOrchestrator:
         if not candidates:
             raise ValueError('No candidate models configured. Set ARENA_MODELS or provide candidates.')
 
-        answers = await asyncio.gather(*[self._run_model(alias, req) for alias in candidates])
-
-        judge_alias = settings.arena_judge_model.strip()
-        if judge_alias:
-            scored_answers = await self._judge_with_model(judge_alias, req.prompt, answers)
-            judge = judge_alias
-        else:
-            scored_answers = self._heuristic_rank(answers)
-            judge = 'heuristic'
-
-        winner = max(scored_answers, key=lambda a: a.score)
-        return ArenaRunResponse(
-            winner=winner,
-            answers=sorted(scored_answers, key=lambda a: a.score, reverse=True),
-            judge=judge,
+        # Create run record
+        arena_run = ArenaRun(
+            prompt=req.prompt,
+            system_prompt=req.system_prompt,
+            candidates=candidates,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+            status=RunStatus.RUNNING,
         )
+        await cosmos_client.save_run(arena_run)
+
+        try:
+            answers = await asyncio.gather(*[self._run_model(alias, req) for alias in candidates])
+
+            judge_alias = settings.arena_judge_model.strip()
+            if judge_alias:
+                scored_answers = await self._judge_with_model(judge_alias, req.prompt, answers)
+                judge = judge_alias
+            else:
+                scored_answers = self._heuristic_rank(answers)
+                judge = 'heuristic'
+
+            winner = max(scored_answers, key=lambda a: a.score)
+            
+            # Update run with results
+            arena_run.status = RunStatus.COMPLETED
+            arena_run.winner_alias = winner.model_alias
+            arena_run.judge = judge
+            arena_run.answers = {a.model_alias: a.answer for a in scored_answers}
+            arena_run.scores = {a.model_alias: a.score for a in scored_answers}
+            arena_run.latencies = {a.model_alias: a.latency_ms for a in scored_answers}
+            await cosmos_client.save_run(arena_run)
+
+            return ArenaRunResponse(
+                run_id=arena_run.id,
+                winner=winner,
+                answers=sorted(scored_answers, key=lambda a: a.score, reverse=True),
+                judge=judge,
+            )
+        except Exception as exc:
+            arena_run.status = RunStatus.FAILED
+            arena_run.error = str(exc)
+            await cosmos_client.save_run(arena_run)
+            raise
 
     async def _run_model(self, alias: str, req: ArenaRunRequest) -> ModelAnswer:
         cfg = load_model_config(alias)
@@ -63,9 +93,7 @@ class ArenaOrchestrator:
         answers: list[ModelAnswer],
     ) -> list[ModelAnswer]:
         cfg = load_model_config(judge_alias)
-        candidate_block = '
-
-'.join([f'[{a.model_alias}]\n{a.answer}' for a in answers])
+        candidate_block = '\n\n'.join([f'[{a.model_alias}]\n{a.answer}' for a in answers])
         judge_prompt = (
             'You are a strict evaluator. Rank responses for correctness, reasoning depth, and clarity. '
             'Return JSON only: {"scores": {"alias": number_between_0_and_1}}.\n\n'
